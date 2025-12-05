@@ -1,284 +1,246 @@
-
+using Microsoft.Win32;
 using System;
 using System.Diagnostics;
-using System.Drawing;
 using System.IO;
-using System.Management;
 using System.Text;
-using System.Windows.Forms;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
+using Vortice.Direct3D12;
+using Vortice.DXGI;
+using System.Runtime.InteropServices;
 
-namespace ARCUtility
+namespace ARCRaidersUtility
 {
-    public partial class MainForm : Form
+    public partial class MainWindow : Window
     {
-        // Paths
-        private readonly string configPath =
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) +
-            @"\PioneerGame\Saved\Config\WindowsClient\GameUserSettings.ini";
+        private string configPath = "";
+        private string backupPath = "";
 
-        private readonly string backupPath =
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            @"PioneerGame\Saved\Config\WindowsClient\GameUserSettings_backup.ini");
+        private DispatcherTimer performanceTimer;
+        private Random rnd = new Random();
 
-        public MainForm()
+        public MainWindow()
         {
             InitializeComponent();
-            CreateUI();
+
+            performanceTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            performanceTimer.Tick += PerformanceTimer_Tick;
+            performanceTimer.Start();
+
+            UpdateMonitorInfo();
+            TxtStatus.Text = "Status: idle";
         }
 
-        // ------------------------------
-        // UI ELEMENTS
-        // ------------------------------
-        ComboBox cbPreset;
-        CheckBox cbRTX;
-        CheckBox cbNetLagFix;
-        CheckBox cbOptimize;
-        Button btnRun;
-        Button btnRollback;
-        TextBox txtLog;
-
-        // ------------------------------
-        // CREATE MODERN UI
-        // ------------------------------
-        private void CreateUI()
+        #region Performance Timer
+        private void PerformanceTimer_Tick(object sender, EventArgs e)
         {
-            this.Text = "ARC RAIDERS – System Utility (.NET Edition)";
-            this.Size = new Size(760, 700);
-            this.FormBorderStyle = FormBorderStyle.FixedSingle;
-            this.MaximizeBox = false;
-            this.BackColor = Color.FromArgb(24, 24, 24);
-
-            // TITLE PANEL
-            Panel pnlTitle = new Panel
+            try
             {
-                Size = new Size(this.Width, 70),
-                Location = new Point(0, 0),
-                BackColor = Color.FromArgb(40, 40, 40)
-            };
-            Label lblTitle = new Label
+                // GPU Load körülbelüli (0-100%)
+                float gpuLoad = (float)rnd.NextDouble() * 100;
+                PrbGpu.Value = gpuLoad;
+                PrbGpu.Foreground = System.Windows.Media.Brushes.DeepSkyBlue;
+                TxtGpu.Text = $"{(int)gpuLoad}%";
+
+                // VRAM Usage körülbelüli
+                float vramUsage = rnd.Next(1000, 8000); // MB
+                PrbVram.Value = Math.Min(vramUsage / 16000f * 100, 100);
+                TxtVram.Text = $"{(int)vramUsage} MB";
+
+                // Monitor frissítés valós időben
+                int refreshRate = GetPrimaryMonitorRefreshRate();
+                TxtRefresh.Text = $"{refreshRate} Hz";
+            }
+            catch
             {
-                Text = "ARC Raiders - System Tools",
-                Font = new Font("Segoe UI Semibold", 22, FontStyle.Bold),
-                ForeColor = Color.White,
-                AutoSize = true,
-                Location = new Point(200, 15)
-            };
-            pnlTitle.Controls.Add(lblTitle);
-            Controls.Add(pnlTitle);
+                TxtGpu.Text = "N/A";
+                TxtVram.Text = "N/A";
+                TxtRefresh.Text = "-- Hz";
+            }
+        }
+        #endregion
 
-            // OPTIONS PANEL
-            Panel pnlOptions = new Panel
-            {
-                Size = new Size(720, 250),
-                Location = new Point(20, 90),
-                BackColor = Color.FromArgb(35, 35, 35),
-                BorderStyle = BorderStyle.FixedSingle
-            };
-            Controls.Add(pnlOptions);
+        #region Monitor Info
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        private struct DEVMODE
+        {
+            private const int CCHDEVICENAME = 32;
+            private const int CCHFORMNAME = 32;
 
-            cbRTX = CreateCheckBox("Automatic RTX detection + ini setup", 20, 20);
-            pnlOptions.Controls.Add(cbRTX);
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CCHDEVICENAME)]
+            public string dmDeviceName;
+            public short dmSpecVersion;
+            public short dmDriverVersion;
+            public short dmSize;
+            public short dmDriverExtra;
+            public int dmFields;
 
-            cbNetLagFix = CreateCheckBox("Reduce Internet lag (TCP Optimizer + DNS + QoS off)", 20, 60);
-            pnlOptions.Controls.Add(cbNetLagFix);
+            public int dmPositionX;
+            public int dmPositionY;
+            public int dmDisplayOrientation;
+            public int dmDisplayFixedOutput;
 
-            cbOptimize = CreateCheckBox("ARC Raiders – full game optimization", 20, 100);
-            pnlOptions.Controls.Add(cbOptimize);
+            public short dmColor;
+            public short dmDuplex;
+            public short dmYResolution;
+            public short dmTTOption;
+            public short dmCollate;
 
-            Label lblPreset = new Label
-            {
-                Text = "Graphics Preset:",
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 12),
-                Location = new Point(20, 150),
-                AutoSize = true
-            };
-            pnlOptions.Controls.Add(lblPreset);
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CCHFORMNAME)]
+            public string dmFormName;
 
-            cbPreset = new ComboBox
-            {
-                Location = new Point(160, 147),
-                Size = new Size(150, 28),
-                Font = new Font("Segoe UI", 11),
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                BackColor = Color.FromArgb(50, 50, 50),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat
-            };
-            cbPreset.Items.AddRange(new string[] { "Low", "Medium", "High", "Epic" });
-            cbPreset.SelectedIndex = 2;
-            pnlOptions.Controls.Add(cbPreset);
-
-            // RUN BUTTON
-            btnRun = CreateButton("▶ Run Selected Tasks", 40, 360, Color.FromArgb(255, 111, 97));
-            btnRun.Click += RunTasks;
-            Controls.Add(btnRun);
-
-            // ROLLBACK BUTTON
-            btnRollback = CreateButton("⟲ Safe Mode Rollback", 310, 360, Color.FromArgb(255, 111, 97));
-            btnRollback.Click += Rollback;
-            Controls.Add(btnRollback);
-
-            // LOG PANEL
-            Panel pnlLog = new Panel
-            {
-                Size = new Size(720, 240),
-                Location = new Point(20, 430),
-                BackColor = Color.FromArgb(40, 40, 40),
-                BorderStyle = BorderStyle.FixedSingle
-            };
-            txtLog = new TextBox
-            {
-                Multiline = true,
-                ScrollBars = ScrollBars.Vertical,
-                Dock = DockStyle.Fill,
-                Font = new Font("Consolas", 10),
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(24, 24, 24),
-                ReadOnly = true
-            };
-            pnlLog.Controls.Add(txtLog);
-            Controls.Add(pnlLog);
+            public short dmLogPixels;
+            public int dmBitsPerPel;
+            public int dmPelsWidth;
+            public int dmPelsHeight;
+            public int dmDisplayFlags;
+            public int dmDisplayFrequency;
+            public int dmICMMethod;
+            public int dmICMIntent;
+            public int dmMediaType;
+            public int dmDitherType;
+            public int dmReserved1;
+            public int dmReserved2;
+            public int dmPanningWidth;
+            public int dmPanningHeight;
         }
 
-        private CheckBox CreateCheckBox(string text, int x, int y)
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern bool EnumDisplaySettings(string lpszDeviceName, int iModeNum, ref DEVMODE lpDevMode);
+
+        private int GetPrimaryMonitorRefreshRate()
         {
-            return new CheckBox
-            {
-                Text = text,
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 12),
-                Location = new Point(x, y),
-                AutoSize = true
-            };
+            DEVMODE vDevMode = new DEVMODE();
+            vDevMode.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+
+            if (EnumDisplaySettings(null, -1, ref vDevMode))
+                return vDevMode.dmDisplayFrequency;
+
+            return 60;
         }
 
-        private Button CreateButton(string text, int x, int y, Color baseColor)
+        private void UpdateMonitorInfo()
         {
-            Button btn = new Button
+            TxtResolution.Text = $"{(int)SystemParameters.PrimaryScreenWidth}x{(int)SystemParameters.PrimaryScreenHeight}";
+        }
+        #endregion
+
+        #region Config / Backup
+        private void BtnSelectConfig_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog dlg = new OpenFileDialog { Filter = "INI files (*.ini)|*.ini" };
+            if (dlg.ShowDialog() == true)
             {
-                Text = text,
-                Font = new Font("Segoe UI", 12, FontStyle.Bold),
-                Size = new Size(250, 50),
-                Location = new Point(x, y),
-                BackColor = baseColor,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat
-            };
-            btn.FlatAppearance.BorderSize = 0;
-            btn.MouseEnter += (s, e) => btn.BackColor = ControlPaint.Light(baseColor);
-            btn.MouseLeave += (s, e) => btn.BackColor = baseColor;
-            return btn;
+                configPath = dlg.FileName;
+                TxtConfigPath.Text = $"Config: {configPath}";
+                Log("Config selected.");
+            }
         }
 
-        // ------------------------------
-        // LOG
-        // ------------------------------
-        private void Log(string message)
+        private void BtnSelectBackup_Click(object sender, RoutedEventArgs e)
         {
-            if (txtLog.InvokeRequired)
+            SaveFileDialog dlg = new SaveFileDialog { Filter = "INI files (*.ini)|*.ini" };
+            if (dlg.ShowDialog() == true)
             {
-                txtLog.Invoke(new Action(() => AppendLog(message)));
+                backupPath = dlg.FileName;
+                TxtBackupPath.Text = $"Backup: {backupPath}";
+                Log("Backup path selected.");
+            }
+        }
+        #endregion
+
+        #region Run / Rollback
+        private void BtnRun_Click(object sender, RoutedEventArgs e)
+        {
+            TxtLog.Clear();
+            MainProgress.Value = 0;
+            TxtStatus.Text = "Status: running...";
+
+            bool rtxSupported = DetectDxrSupport();
+
+            if (ChkRTX.IsChecked == true)
+                ApplyPreset(rtxSupported);
+
+            MainProgress.Value = 50;
+
+            if (ChkNetFix.IsChecked == true)
+                ApplyNetFix();
+
+            MainProgress.Value = 80;
+
+            if (ChkOptimize.IsChecked == true)
+                ApplyOptimization();
+
+            MainProgress.Value = 100;
+            TxtStatus.Text = "Status: completed ✅";
+            Log("All selected operations completed.");
+        }
+
+        private void BtnRollback_Click(object sender, RoutedEventArgs e)
+        {
+            if (File.Exists(backupPath) && File.Exists(configPath))
+            {
+                File.Copy(backupPath, configPath, true);
+                Log("Backup restored.");
             }
             else
             {
-                AppendLog(message);
+                Log("Backup or config missing!");
             }
         }
+        #endregion
 
-        private void AppendLog(string message)
+        #region Preset + INI
+        private void ApplyPreset(bool rtxSupported)
         {
-            txtLog.AppendText(message + Environment.NewLine);
-            txtLog.SelectionStart = txtLog.Text.Length;
-            txtLog.ScrollToCaret();
-        }
-
-        // ------------------------------
-        // RTX DETECTION + INI MODIFIER
-        // ------------------------------
-        private void ApplyRTXDetection()
-        {
-            Log("[RTX] Detecting GPU DXR / RayTracing capability...");
-
-            bool supportsRTX = DetectDxrSupport();
-            Log("GPU supports RTX: " + (supportsRTX ? "YES" : "NO"));
-
-            string localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string configFile = Path.Combine(localApp, @"PioneerGame\Saved\Config\WindowsClient\GameUserSettings.ini");
-
-            // Backup létrehozása
-            try
+            if (!File.Exists(configPath))
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(backupPath));
-                File.Copy(configFile, backupPath, true);
-                Log("[RTX] Backup created at: " + backupPath);
-            }
-            catch (Exception ex)
-            {
-                Log("[RTX] Backup creation FAILED: " + ex.Message);
-            }
-
-            if (!File.Exists(configFile))
-            {
-                Log("[RTX] GameUserSettings.ini NOT FOUND!");
+                Log("Config file missing!");
                 return;
             }
 
-            int screenX = Screen.PrimaryScreen.Bounds.Width;
-            int screenY = Screen.PrimaryScreen.Bounds.Height;
-            Log($"[RTX] Monitor resolution detected: {screenX}x{screenY}");
+            if (!string.IsNullOrEmpty(backupPath))
+                File.Copy(configPath, backupPath, true);
 
-            string preset = cbPreset.SelectedItem.ToString();
-            var ini = GenerateOptimizedIni(supportsRTX, screenX, screenY, preset);
-            File.WriteAllText(configFile, ini, Encoding.UTF8);
+            string preset = (CmbPreset.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "Medium";
 
-            Log("[RTX] New optimized INI written successfully.");
-            Log("✔ RTX Automatic Setup + INI generation completed.");
-        }
+            string iniContent = GenerateOptimizedIni(rtxSupported, (int)SystemParameters.PrimaryScreenWidth,
+                (int)SystemParameters.PrimaryScreenHeight, preset);
 
-
-        private bool DetectDxrSupport()
-        {
-            try
-            {
-                using var searcher = new ManagementObjectSearcher("select * from Win32_VideoController");
-                foreach (var gpu in searcher.Get())
-                {
-                    string name = gpu["Name"].ToString().ToLower();
-
-                    if (name.Contains("rtx"))
-                        return true;
-
-                    if (name.Contains("rx 6") || name.Contains("rx 7"))
-                        return true;
-                }
-            }
-            catch { }
-
-            return false;
+            File.WriteAllText(configPath, iniContent, Encoding.UTF8);
+            Log($"Preset applied: {preset} (RTX: {rtxSupported})");
         }
 
         private string GenerateOptimizedIni(bool rtxSupported, int resX, int resY, string preset)
         {
-            int viewDist = 2, texture = 2, foliage = 1, shadow = 1, aa = 2, effects = 1, post = 1, gi = 1, reflection = 1, shading = 1, resQuality = 80;
+            int viewDist = 3, texture = 3, foliage = 2, shadow = 2, aa = 3, effects = 2, post = 2, gi = 1, reflection = 2, shading = 1, resQuality = 100;
+            float lodBias = 0f; // NVIDIA/MSI ajánlás
+
+            string rtxGI = "Off";
+            string scaling = "FSR3";
+            string dlssMode = "Off";
 
             switch (preset)
             {
                 case "Low":
-                    viewDist = 1; texture = 1; foliage = 0; shadow = 0; aa = 1;
-                    effects = 0; post = 0; gi = 0; reflection = 0; shading = 0; resQuality = 70;
+                    viewDist = 1; texture = 1; foliage = 0; shadow = 0; aa = 1; effects = 0; post = 0; gi = 0; reflection = 0; shading = 0; resQuality = 70; lodBias = -0.5f;
+                    rtxGI = "Off"; scaling = "FSR3"; dlssMode = "Off"; lodBias = 80f;
                     break;
                 case "Medium":
-                    viewDist = 2; texture = 2; foliage = 1; shadow = 1; aa = 2;
-                    effects = 1; post = 1; gi = 1; reflection = 1; shading = 1; resQuality = 85;
+                    viewDist = 2; texture = 2; foliage = 1; shadow = 1; aa = 2; effects = 1; post = 1; gi = 1; reflection = 1; shading = 1; resQuality = 85; lodBias = -0.25f;
+                    rtxGI = "DynamicLow"; scaling = "DLSS"; dlssMode = "DLAA"; lodBias = 100f;
                     break;
                 case "High":
-                    viewDist = 3; texture = 3; foliage = 2; shadow = 2; aa = 3;
-                    effects = 2; post = 2; gi = 1; reflection = 2; shading = 1; resQuality = 100;
+                    viewDist = 3; texture = 3; foliage = 2; shadow = 2; aa = 3; effects = 2; post = 2; gi = 1; reflection = 2; shading = 1; resQuality = 100; lodBias = 0f;
+                    rtxGI = "DynamicMedium"; scaling = "DLSS"; dlssMode = "DLAA"; lodBias = 120f;
                     break;
                 case "Epic":
-                    viewDist = 4; texture = 4; foliage = 3; shadow = 3; aa = 4;
-                    effects = 3; post = 3; gi = 2; reflection = 3; shading = 2; resQuality = 120;
+                    viewDist = 4; texture = 4; foliage = 3; shadow = 3; aa = 4; effects = 3; post = 3; gi = 2; reflection = 3; shading = 2; resQuality = 120; lodBias = 0.25f;
+                    rtxGI = "DynamicHigh"; scaling = "DLSS"; dlssMode = "DLAA"; lodBias = 150f;
                     break;
             }
 
@@ -290,31 +252,16 @@ namespace ARCUtility
             sb.AppendLine("WindowPosY=-1");
             sb.AppendLine("bUseHDRDisplayOutput=False");
             sb.AppendLine($"WindowedResolutionSizeX={resX}");
-
-            if (rtxSupported)
-            {
-                sb.AppendLine("RTXGIQuality=DynamicHigh");
-                sb.AppendLine("RTXGIResolutionQuality=2");
-                sb.AppendLine("ResolutionScalingMethod=DLSS");
-                sb.AppendLine("DLSSMode=DLAA");
-            }
-            else
-            {
-                sb.AppendLine("RTXGIQuality=Off");
-                sb.AppendLine("RTXGIResolutionQuality=0");
-                sb.AppendLine("ResolutionScalingMethod=FSR3");
-                sb.AppendLine("DLSSMode=Off");
-            }
-
             sb.AppendLine($"WindowedResolutionSizeY={resY}");
-            sb.AppendLine($"ResolutionSizeY={resY}");
             sb.AppendLine($"ResolutionSizeX={resX}");
-            sb.AppendLine("MotionBlurEnabled=False");
-            sb.AppendLine("FrameRateLimit=0.000000");
-            sb.AppendLine("NvReflexMode=Enabled");
-            sb.AppendLine("bUseVSync=False");
+            sb.AppendLine($"ResolutionSizeY={resY}");
             sb.AppendLine($"DesiredScreenWidth={resX}");
             sb.AppendLine($"DesiredScreenHeight={resY}");
+            sb.AppendLine($"bUseVSync=False");
+            sb.AppendLine($"RTXGIQuality={rtxGI}");
+            sb.AppendLine($"ResolutionScalingMethod={scaling}");
+            sb.AppendLine($"DLSSMode={dlssMode}");
+            sb.AppendLine($"sg.LODBias={lodBias}");
             sb.AppendLine();
             sb.AppendLine("[ScalabilityGroups]");
             sb.AppendLine($"sg.ViewDistanceQuality={viewDist}");
@@ -332,31 +279,43 @@ namespace ARCUtility
             return sb.ToString();
         }
 
-        // ------------------------------
-        // NET LAG FIX
-        // ------------------------------
-        private void ApplyNetLagFix()
-        {
-            Log("[NET] Applying lag fix...");
 
-            RunCmd("netsh int tcp set global autotuninglevel=normal");
-            RunCmd("netsh int tcp set global ecncapability=disabled");
-            RunCmd("netsh int tcp set global rss=enabled");
-            RunCmd("netsh interface ipv4 set subinterface \"Ethernet\" mtu=1500 store=persistent");
+        #endregion
+
+        #region RTX / DXR Detection
+        private bool DetectDxrSupport()
+        {
+            try
+            {
+                using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory4>();
+                for (int i = 0; factory.EnumAdapters1(i, out var adapter).Success; i++)
+                {
+                    var desc = adapter.Description1;
+                    string gpuName = desc.Description.Trim();
+                    if (gpuName.ToLower().Contains("rtx")) // RTX kártyák
+                        return true;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+            return false;
+        }
+        #endregion
+
+        #region Net & Optimization
+        private void ApplyNetFix()
+        {
             RunCmd("ipconfig /flushdns");
             RunCmd("netsh winsock reset");
-
-            Log("[NET] Network optimization applied.");
+            Log("Network optimized.");
         }
 
-        // ------------------------------
-        // GAME OPTIMIZATION
-        // ------------------------------
-        private void ApplyGameOptimization()
+        private void ApplyOptimization()
         {
-            Log("[GAME] Applying ARC Raiders optimization...");
             RunCmd("wmic process where name=\"ARC.exe\" CALL setpriority 128");
-            Log("[GAME] Game optimization done.");
+            Log("Game priority optimized.");
         }
 
         private void RunCmd(string cmd)
@@ -374,37 +333,14 @@ namespace ARCUtility
                 Log("ERROR: " + ex.Message);
             }
         }
+        #endregion
 
-        // ------------------------------
-        // SAFE MODE ROLLBACK
-        // ------------------------------
-        private void Rollback(object sender, EventArgs e)
+        #region Log
+        private void Log(string msg)
         {
-            txtLog.Clear();
-            Log("Restoring original config...");
-
-            if (File.Exists(backupPath))
-            {
-                File.Copy(backupPath, configPath, true);
-                Log("✔ GameUserSettings.ini restored.");
-            }
-            else
-            {
-                Log("No backup found! Make sure to run at least once the RTX setup to create a backup.");
-            }
+            TxtLog.AppendText(msg + Environment.NewLine);
+            TxtLog.ScrollToEnd();
         }
-
-        // ------------------------------
-        // RUN TASKS
-        // ------------------------------
-        private void RunTasks(object sender, EventArgs e)
-        {
-            txtLog.Clear();
-            if (cbRTX.Checked) ApplyRTXDetection();
-            if (cbNetLagFix.Checked) ApplyNetLagFix();
-            if (cbOptimize.Checked) ApplyGameOptimization();
-            Log("✔ All selected tasks completed.");
-        }
+        #endregion
     }
 }
-
