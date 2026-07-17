@@ -1,3 +1,5 @@
+<img src="https://staticdelivery.nexusmods.com/mods/8365/images/7/7-1784241886-1334375908.png" alt="Nexus Mods kép">
+
 Hello everyone!
 
 I created a comprehensive ARC Raiders optimization program using AI (ARC Raiders Config, Internet lag, RTX support disabling function for older machines and video cards) It increases FPS, reduces internet lag and also speeds up loading. If you are averse to AI, don't use it. If you are not, I recommend it to you, there is no scam in it.
