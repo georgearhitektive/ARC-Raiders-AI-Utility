@@ -19,19 +19,22 @@ I created a comprehensive ARC Raiders optimization program using AI (ARC Raiders
         <li><strong>ROLLBACK</strong> (Restores original GameUserSetting.ini file)</li>
     </ul>
 
-1.) Unzip downloaded file
-2.) Run ARCUtility. exe 
-3.) Select Config.ini (You can now manually select the location of the "ini")
-4.) Select Backup (You can now manually select the location of the "ini")
-5.) Select what you would the program to do
-6.) Press on "Run selected task"
-7.) Have Fun!
+<ul class="step-list">
+        <li>1.) Unzip downloaded file</li>
+        <li>2.) Run <span class="highlight">ARCUtility.exe</span></li>
+        <li>3.) Select Config.ini (You can now manually select the location of the "ini")</li>
+        <li>4.) Select Backup (You can now manually select the location of the "ini")</li>
+        <li>6.) Select what you would the program to do</li>
+        <li>6.) Press on "Run selected task"</li>
+        <li>7.) Have Fun!</li>
+    </ul>
 
 If you don't like the end result:
 
-1.) Run ARCUtility. exe
-2.) Press on "Rollback" 
-3.) Everything went back to the way it was!
+<ul class="Back-list">
+<li><strong>1.) Run ARCUtility. exe</li>
+<li><strong>2.) Press on "Rollback"</li>
+<li><strong>3.) Everything went back to the way it was!</li>
  
 
 Thanks and enjoy it!
